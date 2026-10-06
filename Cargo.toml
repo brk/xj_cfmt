@@ -1,0 +1,22 @@
+[package]
+name = "xj_cfmt"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "Byte-exact printf compatibility macros for translated C"
+license = "MIT"
+repository = "https://github.com/brk/xj_cfmt"
+
+[workspace]
+members = ["xj_cfmt_macros"]
+
+[features]
+default = []
+std-stdio = []
+
+[dependencies]
+libc = "0.2"
+xj_cfmt_macros = { version = "0.1.0", path = "xj_cfmt_macros" }
+
+[dev-dependencies]
+trybuild = "1"

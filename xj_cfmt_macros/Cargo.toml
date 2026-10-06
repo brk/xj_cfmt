@@ -1,0 +1,16 @@
+[package]
+name = "xj_cfmt_macros"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "Procedural macro implementation for xj_cfmt"
+license = "MIT"
+repository = "https://github.com/brk/xj_cfmt"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro2 = "1"
+quote = "1"
+syn = { version = "2", features = ["full"] }

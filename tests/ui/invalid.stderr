@@ -1,0 +1,116 @@
+error: expected literal
+ --> tests/ui/invalid.rs:8:34
+  |
+8 |     let _ = cwrite!(&mut output, runtime, 1);
+  |                                  ^^^^^^^
+
+error: positional argument is never used
+ --> tests/ui/invalid.rs:9:43
+  |
+9 |     let _ = cwrite!(&mut output, "{}", 1, 2);
+  |                                           ^
+
+error: format argument index is out of range
+  --> tests/ui/invalid.rs:10:34
+   |
+10 |     let _ = cwrite!(&mut output, "{}");
+   |                                  ^^^^
+
+error: unsupported or invalid format type
+  --> tests/ui/invalid.rs:11:34
+   |
+11 |     let _ = cwrite!(&mut output, "{:q}", 1);
+   |                                  ^^^^^^
+
+error: format fill must be ASCII
+  --> tests/ui/invalid.rs:15:34
+   |
+15 |     let _ = cwrite!(&mut output, "{:é>5}", "x");
+   |                                  ^^^^^^^^
+
+error: byte-string format placeholders, including fill, must be ASCII
+  --> tests/ui/invalid.rs:16:34
+   |
+16 |     let _ = cwrite!(&mut output, b"{:\xc3\xa9>5}", b"x");
+   |                                  ^^^^^^^^^^^^^^^^
+
+error[E0277]: the trait bound `CStr: LowerHex` is not satisfied
+  --> tests/ui/invalid.rs:12:13
+   |
+12 |     let _ = cwrite!(&mut output, "{:x}", c"text");
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `LowerHex` is not implemented for `CStr`
+   |
+   = help: the following other types implement trait `LowerHex`:
+             &T
+             &mut T
+             FmtRef<'_, T>
+             NonZero<T>
+             Saturating<T>
+             Wrapping<T>
+             compiler_builtins::math::libm_math::support::hex_float::Hexf<(F, F)>
+             compiler_builtins::math::libm_math::support::hex_float::Hexf<(F, i32)>
+           and $N others
+   = note: required for `&CStr` to implement `LowerHex`
+   = note: 1 redundant requirement hidden
+   = note: required for `FmtRef<'_, &CStr>` to implement `LowerHex`
+note: required by a bound in `core::fmt::rt::Argument::<'_>::new_lower_hex`
+  --> $RUST/core/src/fmt/rt.rs
+   |
+   |     pub const fn new_lower_hex<T: LowerHex>(x: &T) -> Argument<'_> {
+   |                                   ^^^^^^^^ required by this bound in `Argument::<'_>::new_lower_hex`
+   = note: this error originates in the macro `::std::format_args` which comes from the expansion of the macro `cwrite` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `Byte: LowerHex` is not satisfied
+  --> tests/ui/invalid.rs:13:13
+   |
+13 |     let _ = cwrite!(&mut output, "{:x}", Byte(1));
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `LowerHex` is not implemented for `Byte`
+   |
+   = help: the following other types implement trait `LowerHex`:
+             &T
+             &mut T
+             FmtRef<'_, T>
+             NonZero<T>
+             Saturating<T>
+             Wrapping<T>
+             compiler_builtins::math::libm_math::support::hex_float::Hexf<(F, F)>
+             compiler_builtins::math::libm_math::support::hex_float::Hexf<(F, i32)>
+           and $N others
+   = note: required for `FmtRef<'_, Byte>` to implement `LowerHex`
+note: required by a bound in `core::fmt::rt::Argument::<'_>::new_lower_hex`
+  --> $RUST/core/src/fmt/rt.rs
+   |
+   |     pub const fn new_lower_hex<T: LowerHex>(x: &T) -> Argument<'_> {
+   |                                   ^^^^^^^^ required by this bound in `Argument::<'_>::new_lower_hex`
+   = note: this error originates in the macro `::std::format_args` which comes from the expansion of the macro `cwrite` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0599]: the method `fmt_display` exists for reference `&&Arg<'_, Neither>`, but its trait bounds were not satisfied
+  --> tests/ui/invalid.rs:14:13
+   |
+3  | struct Neither;
+   | -------------- doesn't satisfy `Neither: CBytes` or `Neither: std::fmt::Display`
+...
+14 |     let _ = cwrite!(&mut output, "{}", Neither);
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ method cannot be called on `&&Arg<'_, Neither>` due to unsatisfied trait bounds
+   |
+  ::: src/__private.rs
+   |
+   | pub struct Arg<'a, T: ?Sized>(pub &'a T);
+   | ----------------------------- doesn't satisfy `Arg<'_, Neither>: ViaStd`
+   |
+   = note: the following trait bounds were not satisfied:
+           `Neither: CBytes`
+           which is required by `&Arg<'_, Neither>: ViaBytes`
+           `Neither: std::fmt::Display`
+           which is required by `Arg<'_, Neither>: ViaStd`
+note: the traits `CBytes` and `std::fmt::Display` must be implemented
+  --> src/lib.rs
+   |
+   | pub trait CBytes {
+   | ^^^^^^^^^^^^^^^^
+   |
+  ::: $RUST/core/src/fmt/mod.rs
+   |
+   | pub trait Display {
+   | ^^^^^^^^^^^^^^^^^
+   = note: this error originates in the macro `$crate::__private::cwrite_impl` which comes from the expansion of the macro `cwrite` (in Nightly builds, run with -Z macro-backtrace for more info)
