@@ -8,13 +8,14 @@ license = "MIT"
 repository = "https://github.com/brk/xj_cfmt"
 
 [workspace]
-members = ["xj_cfmt_macros"]
+members = ["xj_cfmt_macros", "xj_cfmt_core"]
 
 [features]
 default = []
 std-stdio = []
 
 [dependencies]
+xj_cfmt_core = { version = "0.1.0", path = "xj_cfmt_core" }
 libc = "0.2"
 xj_cfmt_macros = { version = "0.1.0", path = "xj_cfmt_macros" }
 

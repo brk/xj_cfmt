@@ -833,3 +833,39 @@ fn push_count(
         }
     }
 }
+
+/// Validate the safety effects of a literal C format. Runtime formats are
+/// checked by render_safe; argument types are checked by SafeAdapt.
+#[proc_macro]
+pub fn validate_safe_format(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let expr = match syn::parse::<syn::Expr>(tokens) {
+        Ok(expr) => expr,
+        Err(e) => return e.into_compile_error().into(),
+    };
+    let mut literal = &expr;
+    loop {
+        match literal {
+            syn::Expr::Group(g) => literal = &g.expr,
+            syn::Expr::Paren(p) => literal = &p.expr,
+            _ => break,
+        }
+    }
+    let syn::Expr::Lit(lit) = literal else {
+        return proc_macro::TokenStream::new();
+    };
+    let bytes = match &lit.lit {
+        syn::Lit::ByteStr(b) => b.value(),
+        syn::Lit::Str(s) => s.value().into_bytes(),
+        syn::Lit::CStr(s) => s.value().to_bytes().to_vec(),
+        _ => return proc_macro::TokenStream::new(),
+    };
+    match xj_cfmt_core::Plan::new(&bytes) {
+        Ok(plan) if !plan.count_stores => proc_macro::TokenStream::new(),
+        Ok(_) => syn::Error::new_spanned(expr, "%n requires the unsafe C formatting form")
+            .into_compile_error()
+            .into(),
+        Err(e) => syn::Error::new_spanned(expr, e.to_string())
+            .into_compile_error()
+            .into(),
+    }
+}

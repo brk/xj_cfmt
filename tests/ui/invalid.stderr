@@ -96,13 +96,13 @@ error[E0599]: the method `fmt_display` exists for reference `&&Arg<'_, Neither>`
   ::: src/__private.rs
    |
    | pub struct Arg<'a, T: ?Sized>(pub &'a T);
-   | ----------------------------- doesn't satisfy `Arg<'_, Neither>: ViaStd`
+   | ----------------------------- doesn't satisfy `xj_cfmt::__private::Arg<'_, Neither>: ViaStd`
    |
    = note: the following trait bounds were not satisfied:
            `Neither: CBytes`
-           which is required by `&Arg<'_, Neither>: ViaBytes`
+           which is required by `&xj_cfmt::__private::Arg<'_, Neither>: ViaBytes`
            `Neither: std::fmt::Display`
-           which is required by `Arg<'_, Neither>: ViaStd`
+           which is required by `xj_cfmt::__private::Arg<'_, Neither>: ViaStd`
 note: the traits `CBytes` and `std::fmt::Display` must be implemented
   --> src/lib.rs
    |

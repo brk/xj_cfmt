@@ -11,6 +11,7 @@ repository = "https://github.com/brk/xj_cfmt"
 proc-macro = true
 
 [dependencies]
+xj_cfmt_core = { version = "0.1.0", path = "../xj_cfmt_core" }
 proc-macro2 = "1"
 quote = "1"
 syn = { version = "2", features = ["full"] }

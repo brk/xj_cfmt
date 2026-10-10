@@ -312,3 +312,63 @@ macro_rules! csnprintf {
 /// Implementation details used by macro expansions.
 #[doc(hidden)]
 pub mod __private;
+
+/// Shared C format syntax and analysis.
+pub use xj_cfmt_core as cformat;
+/// C conversion execution and destination adapters.
+pub mod printf;
+
+/// C sprintf into a raw buffer. Requires an unsafe caller.
+#[macro_export]
+macro_rules! sprintf {
+    ($dest:expr, $fmt:expr $(, $arg:expr)* $(,)?) => {
+        $crate::printf::finish_raw(($dest).cast(), None,
+            $crate::printf::render($crate::CBytes::c_bytes(&$fmt), &[$($crate::printf::Adapt::c_arg(&$arg)),*]))
+    };
+}
+/// C snprintf into a raw buffer. Requires an unsafe caller.
+#[macro_export]
+macro_rules! snprintf {
+    ($dest:expr, $size:expr, $fmt:expr $(, $arg:expr)* $(,)?) => {
+        $crate::printf::finish_raw(($dest).cast(), Some(($size) as usize),
+            $crate::printf::render($crate::CBytes::c_bytes(&$fmt), &[$($crate::printf::Adapt::c_arg(&$arg)),*]))
+    };
+}
+/// C sprintf into safe storage, using safe arguments.
+#[macro_export]
+macro_rules! sprintf_safe {
+    ($dest:expr, $fmt:expr $(, $arg:expr)* $(,)?) => {{
+        $crate::__private::validate_safe_format!($fmt);
+        use $crate::printf::DestinationExt as _;
+        ($dest).__c_finish( None,
+            $crate::printf::render_safe($crate::CBytes::c_bytes(&$fmt), &[$($crate::printf::SafeAdapt::safe_arg(&$arg)),*]))
+    }};
+}
+/// C snprintf into safe storage, using safe arguments.
+#[macro_export]
+macro_rules! snprintf_safe {
+    ($dest:expr, $size:expr, $fmt:expr $(, $arg:expr)* $(,)?) => {{
+        $crate::__private::validate_safe_format!($fmt);
+        use $crate::printf::DestinationExt as _;
+        ($dest).__c_finish( Some(($size) as usize),
+            $crate::printf::render_safe($crate::CBytes::c_bytes(&$fmt), &[$($crate::printf::SafeAdapt::safe_arg(&$arg)),*]))
+    }};
+}
+/// C sprintf into safe storage with raw arguments. Requires an unsafe caller.
+#[macro_export]
+macro_rules! sprintf_unchecked {
+    ($dest:expr, $fmt:expr $(, $arg:expr)* $(,)?) => {{
+        use $crate::printf::DestinationExt as _;
+        ($dest).__c_finish( None,
+            $crate::printf::render($crate::CBytes::c_bytes(&$fmt), &[$($crate::printf::Adapt::c_arg(&$arg)),*]))
+    }};
+}
+/// C snprintf into safe storage with raw arguments. Requires an unsafe caller.
+#[macro_export]
+macro_rules! snprintf_unchecked {
+    ($dest:expr, $size:expr, $fmt:expr $(, $arg:expr)* $(,)?) => {{
+        use $crate::printf::DestinationExt as _;
+        ($dest).__c_finish( Some(($size) as usize),
+            $crate::printf::render($crate::CBytes::c_bytes(&$fmt), &[$($crate::printf::Adapt::c_arg(&$arg)),*]))
+    }};
+}

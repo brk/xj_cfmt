@@ -250,8 +250,13 @@ version = "0.1.0"
 dependencies = [
  "libc",
  "trybuild",
+ "xj_cfmt_core",
  "xj_cfmt_macros",
 ]
+
+[[package]]
+name = "xj_cfmt_core"
+version = "0.1.0"
 
 [[package]]
 name = "xj_cfmt_macros"
@@ -260,6 +265,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
+ "xj_cfmt_core",
 ]
 
 [[package]]

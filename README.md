@@ -1,54 +1,90 @@
 # xj_cfmt
 
-`xj_cfmt` provides `printf`-family macros for C-to-Rust translations. It uses
-ordinary Rust format syntax, but formats string-like values as raw bytes so
-width and precision match C even for non-UTF-8 and multibyte data.
+`xj_cfmt` implements byte-oriented C printing and provides separate macros for
+Rust brace syntax. C literals and runtime formats use the same parser and
+renderer, regardless of the output destination.
 
 ```rust
-use xj_cfmt::{Byte, csnprintf, cwrite};
-
 let mut output = Vec::new();
-assert_eq!(cwrite!(&mut output, "{:>5}|{}", "é", Byte(0xff)), 7);
-assert_eq!(output, b"   \xc3\xa9|\xff");
+assert_eq!(xj_cfmt::sprintf_safe!(output, b"%*.*s:%hhd", -5, 2, b"abcdef", 255), 8);
+assert_eq!(output, b"ab   :-1");
 
-let mut buffer = [0; 4];
-assert_eq!(csnprintf!(&mut buffer, "{}", b"abcdef"), 6);
-assert_eq!(buffer, *b"abc\0");
+let mut buffer = [0u8; 4];
+assert_eq!(xj_cfmt::snprintf_safe!(buffer, 4, c"%s", c"abcdef"), 6);
+assert_eq!(&buffer, b"abc\0");
 ```
 
-The crates are:
+The workspace contains:
 
-- `xj_cfmt`: public traits, macros, sinks, and runtime.
-- `xj_cfmt_macros`: the proc-macro parser and code generator.
+- `xj_cfmt_core`: a `no_std` byte parser, borrowed literal spans, conversion
+  descriptors, sequential argument requirements, and supported-profile analysis.
+  It has no dependency on an ABI, libc, I/O, or other xj crates.
+- `xj_cfmt`: C conversion execution, type-driven argument adaptation, safe and
+  unsafe APIs, and non-stream destinations. `cformat` re-exports the core crate.
+- `xj_cfmt_macros`: brace-format macros and validation of safe C literals.
 
-Display (`{}`) placeholders use the byte path when their argument implements
-`CBytes`; otherwise they use `Display`. Explicit formatting types such as
-`{:x}`, `{:?}`, and `{:p}` always use the corresponding standard formatting
-trait. Fill characters must be ASCII. Both string and byte-string format
-literals are accepted.
+`xj_cio` supplies stream adapters and the same C-format macro names.
+`xj_zstr` implements argument and bounded-destination traits behind `cfmt`.
 
-`cprintf!`, `ceprintf!`, and `cemit!` render each call before invoking its sink,
-so a sink receives exactly one `emit` call. The default standard-stream backend
-uses C `fwrite`, preserving ordering and buffering when translated code still
-uses libc stdio. Enable `std-stdio` to use Rust's locked stdout and stderr.
+## C printing profile
 
-## Translator mapping
+The native POSIX profile supports `d i u o x X c s p n f F e E g G a A`,
+`%%`, all ordinary flags, signed dynamic width and precision, and integer/count
+lengths `hh h l ll j z t`. Floating `%l` means double. `%lc` uses native
+`wint_t` conversion and the active C character locale; wide `%ls` is explicitly
+unsupported. Floating conversions and `%p` use native libc to preserve target
+rounding, spelling, padding, and locale behavior. Integers and narrow strings
+are rendered as bytes without a Unicode conversion. Raw strings are read only
+at their consuming conversion and precision bounds the read. `%n` stores occur
+in conversion order and use the destination type named by the length modifier.
+The profile assumes POSIX 32-bit int, at most 64-bit integer types, and 32-bit
+wint_t; it does not silently substitute the translator host's ABI.
 
-| C | Emitted Rust |
-| --- | --- |
-| `printf("%-10s: %5d\n", name, n)` | `cprintf!("{:<10}: {:5}\n", name, n)` |
-| `printf("%10s", s)` | `cprintf!("{:>10}", s)` |
-| `printf("%c", c)` | `cprintf!("{}", Byte(c as u8))` |
-| `printf("%hhu", x)` | `cprintf!("{}", x as u8)` |
-| `printf("%.*s", n, buf)` | `cprintf!("{:.*}", n as usize, buf)` |
-| `printf("%*d", w, x)` | `cprintf!("{:>1$}", x, w as usize)` |
-| `printf("\xff%s", s)` | `cprintf!(b"\xff{}", s)` |
-| `fprintf(stderr, "error: %s\n", m)` | `ceprintf!("error: {}\n", m)` |
-| `fprintf(f, "%s\n", s)` with `xj_cio` | `xj_cio::cfprintf!(f, "{}\n", s)` |
-| `snprintf(buf, sizeof buf, "%08x", v)` | `csnprintf!(&mut buf, "{:08x}", v)` |
-| `snprintf(out, n, "%s", s)` for a slice | `csnprintf!(&mut out[..n], "{}", s)` |
-| `snprintf(out, n, "%s", s)` for `ZStr` | `csnprintf!(out.limit(n), "{}", s)` |
+Positional arguments, locale grouping, `%m`, `long double`, and wide strings
+return structured errors. Syntax recognition retains unsupported length and
+conversion information. Unknown conversions, missing arguments, and incompatible
+carriers also fail explicitly. Public C APIs return `-1` and set `EINVAL` for
+these errors, `EOVERFLOW` for count overflow, the native errno for native
+conversion failures, and the output error for destination failures. This is the
+library's compatibility policy for inputs outside its profile; it is not a claim
+that C defines behavior for invalid variadic calls. A null `%s` prints `(null)`;
+a null `%n` destination is rejected.
 
-Dynamic width and precision arguments are `usize`. Negative C `*` counts,
-runtime format strings, wide strings, `%n`, and locale-dependent formatting are
-outside this crate's scope.
+`sprintf!` and `snprintf!` take raw destination pointers and require an `unsafe`
+caller. Raw argument pointers are carried without format-dependent classification.
+The caller must guarantee readable string storage and correctly aligned writable
+count storage for the conversions that actually consume each pointer. The macros
+never hide dereferences of caller-supplied raw pointers inside an unsafe block.
+
+`sprintf_safe!` and `snprintf_safe!` accept bounded storage or a `Vec<u8>` and
+safe representations: scalars, C string views, and borrowed bytes. Their argument
+trait rejects raw pointers. Literal `%n` is rejected at compilation; runtime `%n`
+returns an error. Guided byte carriers support `%s`; using them for `%p`, `%n`,
+or numeric conversions is an error, so no unrelated pointer identity is invented.
+`sprintf_unchecked!` and `snprintf_unchecked!` combine safe storage with raw
+arguments and require an unsafe caller. All arguments, including unused extras,
+are evaluated once in their source order. A raw runtime format requires an
+explicit `CStr::from_ptr` at the call site.
+
+All C calls buffer the whole result before transferring it to the destination.
+Bounded storage applies C truncation and termination rules; the return counts
+bytes before truncation and excludes the terminator. `Vec<u8>` holds string
+content without a stored terminator. Raw unbounded destinations never create an
+oversized mutable slice. Incremental stream output, bounded rendering without a
+full-result allocation, and compile-time plans are deferred optimizations.
+
+## Brace syntax
+
+The existing `cprintf!`, `ceprintf!`, `cemit!`, `cwrite!`, and `csnprintf!` macros
+accept Rust format syntax. Display placeholders use `CBytes` when available,
+with byte-oriented width and precision. Other placeholders delegate to standard
+Rust formatting traits. These are useful for hand-written Rust; the translator
+emits C-format macros that retain the original C syntax.
+
+## Development
+
+The translator depends only on `xj_cfmt_core`. Its local crates.io override and
+lockfile support development with Tenjin's locked builds. Publish core, macros,
+cfmt, zstr, then cio, and replace development overrides with published pins
+before releasing the translator. The test suites compare C literal and runtime
+printing with libc and exercise safe API compilation failures.

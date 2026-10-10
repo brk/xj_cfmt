@@ -1,0 +1,11 @@
+error[E0277]: the trait bound `*const i8: SafeAdapt` is not satisfied
+ --> tests/ui/c_format_safety.rs:3:5
+  |
+3 |     xj_cfmt::sprintf_safe!(out, b"%s", c"hello".as_ptr());
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |     |
+  |     the trait `SafeAdapt` is not implemented for `*const i8`
+  |     required by a bound introduced by this call
+  |
+  = help: the trait `SafeAdapt` is implemented for `i8`
+  = note: this error originates in the macro `xj_cfmt::sprintf_safe` (in Nightly builds, run with -Z macro-backtrace for more info)

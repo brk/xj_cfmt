@@ -413,3 +413,5 @@ pub fn emit_c_stdio(bytes: &[u8], stream: CStream) -> io::Result<()> {
         Err(io::ErrorKind::Other.into())
     }
 }
+
+pub use xj_cfmt_macros::validate_safe_format;

@@ -1,0 +1,7 @@
+error: %n requires the unsafe C formatting form
+ --> tests/ui/c_format_count.rs:3:5
+  |
+3 |     xj_cfmt::sprintf_safe!(out, b"%n", 1);
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the macro `xj_cfmt::sprintf_safe` (in Nightly builds, run with -Z macro-backtrace for more info)
