@@ -1,4 +1,4 @@
-use crate::{CBytes, CSink, CSnprintfDest};
+use crate::{ByteDisplay, ByteFormat, CSink, CStrBuffer, CStrDest};
 use libc::c_int;
 use std::fmt;
 use std::io::{self, Write};
@@ -40,20 +40,20 @@ pub struct Arg<'a, T: ?Sized>(pub &'a T);
 pub type StdFmt<'a> = &'a mut dyn FnMut(&mut dyn Write, &dyn fmt::Display) -> io::Result<()>;
 
 /// Preferred byte-oriented Display route.
-#[diagnostic::on_unimplemented(message = "this value implements neither CBytes nor Display")]
+#[diagnostic::on_unimplemented(message = "this value implements neither ByteDisplay nor Display")]
 pub trait ViaBytes {
     /// Formats the wrapped argument.
     fn fmt_display(&self, writer: &mut dyn Write, spec: &Spec, std: StdFmt<'_>) -> io::Result<()>;
 }
 
 /// Fallback standard Display route.
-#[diagnostic::on_unimplemented(message = "this value implements neither CBytes nor Display")]
+#[diagnostic::on_unimplemented(message = "this value implements neither ByteDisplay nor Display")]
 pub trait ViaStd {
     /// Formats the wrapped argument.
     fn fmt_display(&self, writer: &mut dyn Write, spec: &Spec, std: StdFmt<'_>) -> io::Result<()>;
 }
 
-impl<T: CBytes + ?Sized> ViaBytes for &Arg<'_, T> {
+impl<T: ByteDisplay + ?Sized> ViaBytes for &Arg<'_, T> {
     fn fmt_display(&self, writer: &mut dyn Write, spec: &Spec, _std: StdFmt<'_>) -> io::Result<()> {
         write_bytes(writer, self.0, spec)
     }
@@ -65,16 +65,17 @@ impl<T: fmt::Display + ?Sized> ViaStd for Arg<'_, T> {
     }
 }
 
-fn write_bytes<T: CBytes + ?Sized>(
+fn write_bytes<T: ByteDisplay + ?Sized>(
     writer: &mut dyn Write,
     value: &T,
     spec: &Spec,
 ) -> io::Result<()> {
-    let mut bytes = value.c_bytes();
-    if let Some(precision) = spec.precision.filter(|_| !value.ignores_precision()) {
+    let mode = value.byte_format();
+    let mut bytes = value.view_bytes();
+    if let Some(precision) = spec.precision.filter(|_| mode != ByteFormat::Character) {
         bytes = &bytes[..bytes.len().min(precision)];
     }
-    if value.stops_at_nul() {
+    if mode == ByteFormat::CString {
         if let Some(end) = bytes.iter().position(|&byte| byte == 0) {
             bytes = &bytes[..end];
         }
@@ -276,17 +277,16 @@ pub trait WriteExt: Write {
 impl<W: Write + ?Sized> WriteExt for W {}
 
 struct SnprintfWriter<'a> {
-    region: &'a mut [u8],
-    limit: usize,
+    destination: CStrDest<'a>,
     written: usize,
     count: usize,
 }
 
 impl Write for SnprintfWriter<'_> {
     fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-        let available = self.limit.saturating_sub(self.written);
-        let copied = available.min(bytes.len());
-        self.region[self.written..self.written + copied].copy_from_slice(&bytes[..copied]);
+        let remaining = &mut self.destination.payload_mut()[self.written..];
+        let copied = remaining.len().min(bytes.len());
+        remaining[..copied].copy_from_slice(&bytes[..copied]);
         self.written += copied;
         self.count = self.count.saturating_add(bytes.len()).min(C_INT_OVERFLOW);
         Ok(bytes.len())
@@ -299,52 +299,24 @@ impl Write for SnprintfWriter<'_> {
 /// Applies C `snprintf` truncation and termination rules.
 pub fn snprintf<D, F>(destination: &mut D, render: F) -> c_int
 where
-    D: CSnprintfDest + ?Sized,
+    D: CStrBuffer + ?Sized,
     F: FnOnce(&mut dyn Write) -> io::Result<()>,
 {
-    let (region, terminated) = destination.dest();
-    let limit = if terminated {
-        region.len()
-    } else {
-        region.len().saturating_sub(1)
-    };
-    let mut writer = SnprintfWriter {
-        region,
-        limit,
-        written: 0,
-        count: 0,
-    };
-    let result = render(&mut writer);
-    if writer.written < writer.region.len() {
-        writer.region[writer.written] = 0;
-    }
-    if result.is_err() || writer.count >= C_INT_OVERFLOW {
-        -1
-    } else {
-        writer.count as c_int
-    }
+    snprintf_dest(destination.cstr_dest(), render)
 }
 
-/// Applies `snprintf` behavior to an already-resolved destination region.
-pub fn snprintf_region<F>(region: &mut [u8], terminated: bool, render: F) -> c_int
+/// Applies `snprintf` behavior to an already-resolved destination view.
+pub fn snprintf_dest<F>(destination: CStrDest<'_>, render: F) -> c_int
 where
     F: FnOnce(&mut dyn Write) -> io::Result<()>,
 {
-    let limit = if terminated {
-        region.len()
-    } else {
-        region.len().saturating_sub(1)
-    };
     let mut writer = SnprintfWriter {
-        region,
-        limit,
+        destination,
         written: 0,
         count: 0,
     };
     let result = render(&mut writer);
-    if writer.written < writer.region.len() {
-        writer.region[writer.written] = 0;
-    }
+    writer.destination.terminate(writer.written);
     if result.is_err() || writer.count >= C_INT_OVERFLOW {
         -1
     } else {

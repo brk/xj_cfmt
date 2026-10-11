@@ -5,8 +5,9 @@
 //! aligned, writable count destinations of the type selected by the length.
 #![allow(missing_docs)]
 use crate::cformat::{Count, Length, Piece, Plan};
-use crate::{CBytes, CSnprintfDest};
+use crate::{Byte, ByteView, RawBytes};
 use std::ffi::{CStr, CString};
+pub use xj_bytes::{CStrOutput as Destination, DestinationSizeError};
 
 #[derive(Clone, Copy)]
 pub enum Arg<'a> {
@@ -40,11 +41,31 @@ numeric!(U, u64, u8, u16, u32, u64, usize, char);
 numeric!(F, f64, f32, f64);
 macro_rules! bytes {
     ($($ty:ty),*) => { $(
-        impl Adapt for $ty { fn c_arg(&self) -> Arg<'_> { Arg::Bytes(self.c_bytes()) } }
+        impl Adapt for $ty { fn c_arg(&self) -> Arg<'_> { Arg::Bytes(self.view_bytes()) } }
         impl SafeAdapt for $ty { fn safe_arg(&self) -> SafeArg<'_> { SafeArg(self.c_arg()) } }
     )* };
 }
 bytes!([u8], Vec<u8>, str, String, CStr, CString);
+impl Adapt for Byte {
+    fn c_arg(&self) -> Arg<'_> {
+        Arg::U(u64::from(self.0))
+    }
+}
+impl SafeAdapt for Byte {
+    fn safe_arg(&self) -> SafeArg<'_> {
+        SafeArg(self.c_arg())
+    }
+}
+impl<T: ByteView + ?Sized> Adapt for RawBytes<'_, T> {
+    fn c_arg(&self) -> Arg<'_> {
+        Arg::Bytes(self.view_bytes())
+    }
+}
+impl<T: ByteView + ?Sized> SafeAdapt for RawBytes<'_, T> {
+    fn safe_arg(&self) -> SafeArg<'_> {
+        SafeArg(self.c_arg())
+    }
+}
 impl<const N: usize> Adapt for [u8; N] {
     fn c_arg(&self) -> Arg<'_> {
         Arg::Bytes(self)
@@ -279,13 +300,7 @@ pub unsafe fn render_plan(plan: &Plan<'_>, args: &[Arg<'_>]) -> Result<Vec<u8>, 
             b's' => match get(index)? {
                 Arg::Bytes(bytes) => {
                     let bytes = &bytes[..bytes.len().min(precision.unwrap_or(usize::MAX))];
-                    pad_and_emit(
-                        &mut out,
-                        crate::cformat::c_bytes(bytes),
-                        width,
-                        minus,
-                        false,
-                    );
+                    pad_and_emit(&mut out, crate::c_bytes(bytes), width, minus, false);
                 }
                 a => {
                     let p = pointer(a, index)?.cast::<u8>();
@@ -421,43 +436,6 @@ native!(native_float, f64);
 native!(native_wide_char, core::ffi::c_uint);
 native!(native_pointer, *mut core::ffi::c_void);
 
-/// A safe destination for a complete C formatted call.
-pub trait Destination {
-    fn write_c(&mut self, bytes: &[u8], size: Option<usize>) -> Result<(), Error>;
-}
-impl<T: CSnprintfDest + ?Sized> Destination for T {
-    fn write_c(&mut self, bytes: &[u8], size: Option<usize>) -> Result<(), Error> {
-        let (region, terminated) = self.dest();
-        let capacity = region.len() + usize::from(terminated);
-        let size = size.unwrap_or(capacity);
-        if size > capacity {
-            return Err(Error::Argument(0));
-        }
-        if size == 0 {
-            return Ok(());
-        }
-        let n = bytes.len().min(size - 1);
-        region[..n].copy_from_slice(&bytes[..n]);
-        if n < region.len() {
-            region[n] = 0;
-        }
-        Ok(())
-    }
-}
-/// Rust owned bytes represent the string content, without a stored terminator.
-impl Destination for Vec<u8> {
-    fn write_c(&mut self, bytes: &[u8], size: Option<usize>) -> Result<(), Error> {
-        if size == Some(0) {
-            return Ok(());
-        }
-        let n = bytes
-            .len()
-            .min(size.map_or(usize::MAX, |n| n.saturating_sub(1)));
-        self.clear();
-        self.extend_from_slice(&bytes[..n]);
-        Ok(())
-    }
-}
 /// # Safety
 /// `ptr` must be writable for min(size, bytes.len()+1) bytes. For None,
 /// the complete output and its terminator must fit. No oversized slice is made.
@@ -483,7 +461,7 @@ pub fn finish<D: Destination + ?Sized>(
 ) -> i32 {
     match result.and_then(|bytes| {
         let n = count(&bytes)?;
-        dest.write_c(&bytes, size)?;
+        dest.write_c(&bytes, size).map_err(|_| Error::Argument(0))?;
         Ok(n)
     }) {
         Ok(n) => n,

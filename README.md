@@ -16,15 +16,20 @@ assert_eq!(&buffer, b"abc\0");
 
 The workspace contains:
 
-- `xj_cfmt_core`: a `no_std` byte parser, borrowed literal spans, conversion
+- `xj_cfmt_core`: a `no_std` printf parser, borrowed literal spans, conversion
   descriptors, sequential argument requirements, and supported-profile analysis.
-  It has no dependency on an ABI, libc, I/O, or other xj crates.
+  It depends on `xj_bytes`, with no dependency on an ABI, libc, I/O, or rendering.
 - `xj_cfmt`: C conversion execution, type-driven argument adaptation, safe and
   unsafe APIs, and non-stream destinations. `cformat` re-exports the core crate.
 - `xj_cfmt_macros`: brace-format macros and validation of safe C literals.
 
 `xj_cio` supplies stream adapters and the same C-format macro names.
-`xj_zstr` implements argument and bounded-destination traits behind `cfmt`.
+The standalone `xj_bytes` crate supplies shared `ByteView` implementations,
+`c_bytes`, `to_c_str`, `CStrDest`, `CStrBuffer`, and `CStrOutput` storage policies.
+It is `no_std` with `alloc`; its optional `std` feature adds Unix OS/path views.
+Both `xj_cfmt` and `xj_cfmt_core` depend on it.
+`xj_zstr` implements the shared destination trait without a feature flag.
+Its `cfmt` feature supplies formatting argument adapters.
 
 ## C printing profile
 
@@ -56,8 +61,8 @@ The caller must guarantee readable string storage and correctly aligned writable
 count storage for the conversions that actually consume each pointer. The macros
 never hide dereferences of caller-supplied raw pointers inside an unsafe block.
 
-`sprintf_safe!` and `snprintf_safe!` accept bounded storage or a `Vec<u8>` and
-safe representations: scalars, C string views, and borrowed bytes. Their argument
+`sprintf_safe!` and `snprintf_safe!` accept bounded storage or growable `Vec<u8>`
+destinations and safe representations: scalars, C string views, and borrowed bytes. Their argument
 trait rejects raw pointers. Literal `%n` is rejected at compilation; runtime `%n`
 returns an error. Guided byte carriers support `%s`; using them for `%p`, `%n`,
 or numeric conversions is an error, so no unrelated pointer identity is invented.
@@ -68,23 +73,47 @@ explicit `CStr::from_ptr` at the call site.
 
 All C calls buffer the whole result before transferring it to the destination.
 Bounded storage applies C truncation and termination rules; the return counts
-bytes before truncation and excludes the terminator. `Vec<u8>` holds string
-content without a stored terminator. Raw unbounded destinations never create an
-oversized mutable slice. Incremental stream output, bounded rendering without a
-full-result allocation, and compile-time plans are deferred optimizations.
+bytes before truncation and excludes the terminator. A direct `Vec<u8>` destination
+replaces its contents and grows as needed, without storing a terminator.
+An explicit `snprintf` size limits its payload
+to `size - 1` bytes; size zero leaves it unchanged. Pass `vector.as_mut_slice()`
+for a bounded buffer using the initialized length, preserving its length and
+bytes beyond the written terminator. Raw unbounded destinations never create
+an oversized mutable slice. Incremental stream output, bounded rendering without
+a full-result allocation, and compile-time plans are deferred optimizations.
 
 ## Brace syntax
 
 The existing `cprintf!`, `ceprintf!`, `cemit!`, `cwrite!`, and `csnprintf!` macros
-accept Rust format syntax. Display placeholders use `CBytes` when available,
-with byte-oriented width and precision. Other placeholders delegate to standard
+accept Rust format syntax. Display placeholders use `ByteDisplay` when available,
+with byte-oriented width and precision. `ByteView::view_bytes` supplies the
+complete available bytes; `ByteDisplay::byte_format` selects C string, literal
+byte, or character handling. `RawBytes(&value)` selects literal byte handling,
+including stored NULs. C printing `%s` always applies C string semantics.
+Other placeholders delegate to standard
 Rust formatting traits. These are useful for hand-written Rust; the translator
 emits C-format macros that retain the original C syntax.
 
+## Bounded string destinations
+
+`CStrBuffer::cstr_dest()` produces the same `CStrDest` view for arrays, slices,
+`ZStr`, and `ZString`. For a vector, use `vector.as_mut_slice().cstr_dest()`
+to select its initialized bytes as bounded storage. `CStrDest::limit(n)` selects
+a C size including space for the terminating NUL, with zero meaning no writes.
+Limits beyond the view's extent are rejected. String writers use `payload_mut()`,
+`terminate(len)`, or `write_truncated(bytes)`; nonterminating writers can use
+`region_mut()`, which excludes a string buffer's protected final NUL.
+
+For example, `csnprintf!(buffer.cstr_dest().limit(n), "{}", value)` uses Rust
+formatting within C size `n`; import `xj_cfmt::CStrBuffer` for the method. A
+`ZStr` also provides the convenience `buffer.limit(n)`. A smaller boundary need
+not already contain a NUL. Both printing engines share the destination view's
+size and termination rules.
+
 ## Development
 
-The translator depends only on `xj_cfmt_core`. Its local crates.io override and
-lockfile support development with Tenjin's locked builds. Publish core, macros,
-cfmt, zstr, then cio, and replace development overrides with published pins
+The translator depends on `xj_bytes` and `xj_cfmt_core`. Their local crates.io
+overrides and lockfile support development with Tenjin's locked builds. Publish
+bytes, core, macros, cfmt, zstr, then cio, and replace development overrides with published pins
 before releasing the translator. The test suites compare C literal and runtime
 printing with libc and exercise safe API compilation failures.

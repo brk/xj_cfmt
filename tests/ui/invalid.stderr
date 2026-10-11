@@ -88,7 +88,7 @@ error[E0599]: the method `fmt_display` exists for reference `&&Arg<'_, Neither>`
   --> tests/ui/invalid.rs:14:13
    |
 3  | struct Neither;
-   | -------------- doesn't satisfy `Neither: CBytes` or `Neither: std::fmt::Display`
+   | -------------- doesn't satisfy `Neither: ByteDisplay` or `Neither: std::fmt::Display`
 ...
 14 |     let _ = cwrite!(&mut output, "{}", Neither);
    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ method cannot be called on `&&Arg<'_, Neither>` due to unsatisfied trait bounds
@@ -99,15 +99,15 @@ error[E0599]: the method `fmt_display` exists for reference `&&Arg<'_, Neither>`
    | ----------------------------- doesn't satisfy `xj_cfmt::__private::Arg<'_, Neither>: ViaStd`
    |
    = note: the following trait bounds were not satisfied:
-           `Neither: CBytes`
+           `Neither: ByteDisplay`
            which is required by `&xj_cfmt::__private::Arg<'_, Neither>: ViaBytes`
            `Neither: std::fmt::Display`
            which is required by `xj_cfmt::__private::Arg<'_, Neither>: ViaStd`
-note: the traits `CBytes` and `std::fmt::Display` must be implemented
+note: the traits `ByteDisplay` and `std::fmt::Display` must be implemented
   --> src/lib.rs
    |
-   | pub trait CBytes {
-   | ^^^^^^^^^^^^^^^^
+   | pub trait ByteDisplay: ByteView {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
    |
   ::: $RUST/core/src/fmt/mod.rs
    |

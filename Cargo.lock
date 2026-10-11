@@ -245,11 +245,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "23b97319f7b8343df12cc98938e5c3eb436064524c8d2b4e30a1d3a36eecdf81"
 
 [[package]]
+name = "xj_bytes"
+version = "0.1.0"
+
+[[package]]
 name = "xj_cfmt"
 version = "0.1.0"
 dependencies = [
  "libc",
  "trybuild",
+ "xj_bytes",
  "xj_cfmt_core",
  "xj_cfmt_macros",
 ]
@@ -257,6 +262,9 @@ dependencies = [
 [[package]]
 name = "xj_cfmt_core"
 version = "0.1.0"
+dependencies = [
+ "xj_bytes",
+]
 
 [[package]]
 name = "xj_cfmt_macros"

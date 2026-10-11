@@ -1,43 +1,57 @@
 //! Byte-exact formatting macros for C-to-Rust translations.
 //!
 //! Display placeholders (`{}`) use byte-oriented width and precision for
-//! values implementing [`CBytes`]. Other values and all explicitly typed
+//! values implementing [`ByteDisplay`]. Other values and all explicitly typed
 //! placeholders are delegated to Rust's standard formatting traits.
 
 #![warn(missing_docs)]
 
 use std::borrow::Cow;
-use std::ffi::{CStr, CString, OsStr, OsString};
+use std::ffi::{CStr, CString};
+#[cfg(unix)]
+use std::ffi::{OsStr, OsString};
 use std::io;
-use std::os::unix::ffi::OsStrExt;
+#[cfg(unix)]
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::Arc;
 
-/// Supplies the bytes printed by a Display (`{}`) placeholder.
+/// Shared borrowed byte views and bounded string destinations.
+pub use xj_bytes::{ByteView, CStrBuffer, CStrDest, c_bytes, to_c_str};
+
+/// How a Display (`{}`) placeholder interprets a byte view.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ByteFormat {
+    /// Stops at the first NUL. Precision limits the number of bytes examined.
+    CString,
+    /// Prints literal bytes, including NULs. Precision limits their count.
+    Bytes,
+    /// Prints a character's bytes, including NUL, and ignores precision.
+    Character,
+}
+
+/// Chooses formatting behavior for a borrowed byte view.
+///
+/// Implementing `ByteView` alone does not opt a type into byte formatting.
+/// Standard formatting traits are used for other values and explicitly typed
+/// placeholders. Width always counts the bytes actually printed.
 ///
 /// ```
+/// use xj_cfmt::{ByteDisplay, ByteFormat, ByteView};
 /// struct Packet(Vec<u8>);
-/// impl xj_cfmt::CBytes for Packet {
-///     fn c_bytes(&self) -> &[u8] { &self.0 }
+/// impl ByteView for Packet {
+///     fn view_bytes(&self) -> &[u8] { &self.0 }
+/// }
+/// impl ByteDisplay for Packet {
+///     fn byte_format(&self) -> ByteFormat { ByteFormat::Bytes }
 /// }
 /// let mut output = Vec::new();
 /// xj_cfmt::cwrite!(&mut output, "{:.2}", Packet(vec![0xff, 1, 2]));
 /// assert_eq!(output, [0xff, 1]);
 /// ```
-pub trait CBytes {
-    /// Returns the bytes to print, before precision and NUL handling.
-    fn c_bytes(&self) -> &[u8];
-
-    /// Whether output ends at the first NUL byte.
-    fn stops_at_nul(&self) -> bool {
-        false
-    }
-
-    /// Whether precision is ignored, as it is for C's `%c`.
-    fn ignores_precision(&self) -> bool {
-        false
-    }
+pub trait ByteDisplay: ByteView {
+    /// Chooses NUL and precision handling for Display placeholders.
+    fn byte_format(&self) -> ByteFormat;
 }
 
 /// A single byte formatted with C `%c` semantics.
@@ -50,133 +64,91 @@ pub trait CBytes {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Byte(pub u8);
 
-impl CBytes for Byte {
-    fn c_bytes(&self) -> &[u8] {
+impl ByteView for Byte {
+    fn view_bytes(&self) -> &[u8] {
         std::slice::from_ref(&self.0)
     }
+}
 
-    fn ignores_precision(&self) -> bool {
-        true
+impl ByteDisplay for Byte {
+    fn byte_format(&self) -> ByteFormat {
+        ByteFormat::Character
     }
 }
 
-macro_rules! c_bytes_slice {
-    ($ty:ty, |$value:ident| $body:block, $nul:expr) => {
-        impl CBytes for $ty {
-            fn c_bytes(&self) -> &[u8] {
-                #[allow(clippy::ptr_arg)]
-                fn get($value: &$ty) -> &[u8] $body
-                get(self)
-            }
-            fn stops_at_nul(&self) -> bool { $nul }
-        }
-    };
-}
-
-c_bytes_slice!([u8], |value| { value }, true);
-c_bytes_slice!(str, |value| { value.as_bytes() }, false);
-c_bytes_slice!(Vec<u8>, |value| { value.as_slice() }, true);
-c_bytes_slice!(String, |value| { value.as_bytes() }, false);
-c_bytes_slice!(CStr, |value| { value.to_bytes() }, false);
-c_bytes_slice!(CString, |value| { value.as_bytes() }, false);
-c_bytes_slice!(OsStr, |value| { value.as_bytes() }, false);
-c_bytes_slice!(OsString, |value| { value.as_os_str().as_bytes() }, false);
-c_bytes_slice!(Path, |value| { value.as_os_str().as_bytes() }, false);
-c_bytes_slice!(PathBuf, |value| { value.as_os_str().as_bytes() }, false);
-
-impl<const N: usize> CBytes for [u8; N] {
-    fn c_bytes(&self) -> &[u8] {
-        self
-    }
-    fn stops_at_nul(&self) -> bool {
-        true
-    }
-}
-
-impl<T: CBytes + ?Sized> CBytes for &T {
-    fn c_bytes(&self) -> &[u8] {
-        T::c_bytes(self)
-    }
-    fn stops_at_nul(&self) -> bool {
-        T::stops_at_nul(self)
-    }
-    fn ignores_precision(&self) -> bool {
-        T::ignores_precision(self)
-    }
-}
-
-impl<T: CBytes + ?Sized> CBytes for &mut T {
-    fn c_bytes(&self) -> &[u8] {
-        T::c_bytes(self)
-    }
-    fn stops_at_nul(&self) -> bool {
-        T::stops_at_nul(self)
-    }
-    fn ignores_precision(&self) -> bool {
-        T::ignores_precision(self)
-    }
-}
-
-macro_rules! c_bytes_pointer {
-    ($ty:ident) => {
-        impl<T: CBytes + ?Sized> CBytes for $ty<T> {
-            fn c_bytes(&self) -> &[u8] {
-                T::c_bytes(self)
-            }
-            fn stops_at_nul(&self) -> bool {
-                T::stops_at_nul(self)
-            }
-            fn ignores_precision(&self) -> bool {
-                T::ignores_precision(self)
-            }
-        }
-    };
-}
-c_bytes_pointer!(Box);
-c_bytes_pointer!(Rc);
-c_bytes_pointer!(Arc);
-
-impl<B> CBytes for Cow<'_, B>
-where
-    B: CBytes + ToOwned + ?Sized,
-{
-    fn c_bytes(&self) -> &[u8] {
-        B::c_bytes(self)
-    }
-    fn stops_at_nul(&self) -> bool {
-        B::stops_at_nul(self)
-    }
-    fn ignores_precision(&self) -> bool {
-        B::ignores_precision(self)
-    }
-}
-
-/// A destination for [`csnprintf!`].
+/// Formats a borrowed byte view literally, including NULs.
 ///
-/// Implementations may exclude a permanently reserved final NUL from the
-/// returned region and return `true`. Plain byte slices return their whole
-/// region and `false`, reserving one byte dynamically for termination.
-pub trait CSnprintfDest {
-    /// Returns the writable region and whether a NUL is guaranteed immediately
-    /// after that region.
-    fn dest(&mut self) -> (&mut [u8], bool);
-}
+/// Precision and width count bytes. This overrides only Display formatting;
+/// consumers such as printf `%s` still apply their own string semantics.
+///
+/// ```
+/// use xj_cfmt::{cwrite, RawBytes};
+/// let mut output = Vec::new();
+/// cwrite!(&mut output, "{}", RawBytes(b"a\0b"));
+/// assert_eq!(output, b"a\0b");
+/// ```
+#[derive(Clone, Copy, Debug)]
+pub struct RawBytes<'a, T: ?Sized>(pub &'a T);
 
-impl CSnprintfDest for [u8] {
-    fn dest(&mut self) -> (&mut [u8], bool) {
-        (self, false)
+impl<T: ByteView + ?Sized> ByteView for RawBytes<'_, T> {
+    fn view_bytes(&self) -> &[u8] {
+        self.0.view_bytes()
     }
 }
 
-impl<const N: usize> CSnprintfDest for [u8; N] {
-    fn dest(&mut self) -> (&mut [u8], bool) {
-        (&mut self[..], false)
+impl<T: ByteView + ?Sized> ByteDisplay for RawBytes<'_, T> {
+    fn byte_format(&self) -> ByteFormat {
+        ByteFormat::Bytes
     }
 }
 
-impl<T: CSnprintfDest + ?Sized> CSnprintfDest for &mut T {
-    fn dest(&mut self) -> (&mut [u8], bool) {
-        T::dest(self)
+macro_rules! byte_display {
+    ($format:ident, $($ty:ty),* $(,)?) => { $(
+        impl ByteDisplay for $ty {
+            fn byte_format(&self) -> ByteFormat { ByteFormat::$format }
+        }
+    )* };
+}
+
+byte_display!(CString, [u8], Vec<u8>, CStr, CString);
+byte_display!(Bytes, str, String);
+#[cfg(unix)]
+byte_display!(Bytes, OsStr, OsString, Path, PathBuf);
+
+impl<const N: usize> ByteDisplay for [u8; N] {
+    fn byte_format(&self) -> ByteFormat {
+        ByteFormat::CString
+    }
+}
+
+impl<T: ByteDisplay + ?Sized> ByteDisplay for &T {
+    fn byte_format(&self) -> ByteFormat {
+        T::byte_format(self)
+    }
+}
+
+impl<T: ByteDisplay + ?Sized> ByteDisplay for &mut T {
+    fn byte_format(&self) -> ByteFormat {
+        T::byte_format(self)
+    }
+}
+
+macro_rules! byte_display_pointer {
+    ($ty:ident) => {
+        impl<T: ByteDisplay + ?Sized> ByteDisplay for $ty<T> {
+            fn byte_format(&self) -> ByteFormat {
+                T::byte_format(self)
+            }
+        }
+    };
+}
+byte_display_pointer!(Box);
+byte_display_pointer!(Rc);
+byte_display_pointer!(Arc);
+
+impl<B: ByteDisplay + ToOwned + ?Sized> ByteDisplay for Cow<'_, B> {
+    fn byte_format(&self) -> ByteFormat {
+        B::byte_format(self)
     }
 }
 
@@ -323,7 +295,7 @@ pub mod printf;
 macro_rules! sprintf {
     ($dest:expr, $fmt:expr $(, $arg:expr)* $(,)?) => {
         $crate::printf::finish_raw(($dest).cast(), None,
-            $crate::printf::render($crate::CBytes::c_bytes(&$fmt), &[$($crate::printf::Adapt::c_arg(&$arg)),*]))
+            $crate::printf::render($crate::ByteView::view_bytes(&$fmt), &[$($crate::printf::Adapt::c_arg(&$arg)),*]))
     };
 }
 /// C snprintf into a raw buffer. Requires an unsafe caller.
@@ -331,7 +303,7 @@ macro_rules! sprintf {
 macro_rules! snprintf {
     ($dest:expr, $size:expr, $fmt:expr $(, $arg:expr)* $(,)?) => {
         $crate::printf::finish_raw(($dest).cast(), Some(($size) as usize),
-            $crate::printf::render($crate::CBytes::c_bytes(&$fmt), &[$($crate::printf::Adapt::c_arg(&$arg)),*]))
+            $crate::printf::render($crate::ByteView::view_bytes(&$fmt), &[$($crate::printf::Adapt::c_arg(&$arg)),*]))
     };
 }
 /// C sprintf into safe storage, using safe arguments.
@@ -341,7 +313,7 @@ macro_rules! sprintf_safe {
         $crate::__private::validate_safe_format!($fmt);
         use $crate::printf::DestinationExt as _;
         ($dest).__c_finish( None,
-            $crate::printf::render_safe($crate::CBytes::c_bytes(&$fmt), &[$($crate::printf::SafeAdapt::safe_arg(&$arg)),*]))
+            $crate::printf::render_safe($crate::ByteView::view_bytes(&$fmt), &[$($crate::printf::SafeAdapt::safe_arg(&$arg)),*]))
     }};
 }
 /// C snprintf into safe storage, using safe arguments.
@@ -351,7 +323,7 @@ macro_rules! snprintf_safe {
         $crate::__private::validate_safe_format!($fmt);
         use $crate::printf::DestinationExt as _;
         ($dest).__c_finish( Some(($size) as usize),
-            $crate::printf::render_safe($crate::CBytes::c_bytes(&$fmt), &[$($crate::printf::SafeAdapt::safe_arg(&$arg)),*]))
+            $crate::printf::render_safe($crate::ByteView::view_bytes(&$fmt), &[$($crate::printf::SafeAdapt::safe_arg(&$arg)),*]))
     }};
 }
 /// C sprintf into safe storage with raw arguments. Requires an unsafe caller.
@@ -360,7 +332,7 @@ macro_rules! sprintf_unchecked {
     ($dest:expr, $fmt:expr $(, $arg:expr)* $(,)?) => {{
         use $crate::printf::DestinationExt as _;
         ($dest).__c_finish( None,
-            $crate::printf::render($crate::CBytes::c_bytes(&$fmt), &[$($crate::printf::Adapt::c_arg(&$arg)),*]))
+            $crate::printf::render($crate::ByteView::view_bytes(&$fmt), &[$($crate::printf::Adapt::c_arg(&$arg)),*]))
     }};
 }
 /// C snprintf into safe storage with raw arguments. Requires an unsafe caller.
@@ -369,6 +341,6 @@ macro_rules! snprintf_unchecked {
     ($dest:expr, $size:expr, $fmt:expr $(, $arg:expr)* $(,)?) => {{
         use $crate::printf::DestinationExt as _;
         ($dest).__c_finish( Some(($size) as usize),
-            $crate::printf::render($crate::CBytes::c_bytes(&$fmt), &[$($crate::printf::Adapt::c_arg(&$arg)),*]))
+            $crate::printf::render($crate::ByteView::view_bytes(&$fmt), &[$($crate::printf::Adapt::c_arg(&$arg)),*]))
     }};
 }

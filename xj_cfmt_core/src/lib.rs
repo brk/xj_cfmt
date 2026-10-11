@@ -1,8 +1,10 @@
-//! C printing syntax, independent of rendering and the host ABI.
+//! C printing syntax and analysis, independent of rendering and the host ABI.
 #![no_std]
 extern crate alloc;
+
 use alloc::vec::Vec;
 use core::fmt;
+use xj_bytes::c_bytes;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Flags {
@@ -69,10 +71,6 @@ impl fmt::Display for Error {
 }
 impl core::error::Error for Error {}
 
-/// Bytes visible to a C string consumer.
-pub fn c_bytes(bytes: &[u8]) -> &[u8] {
-    &bytes[..bytes.iter().position(|&b| b == 0).unwrap_or(bytes.len())]
-}
 pub struct Parser<'a> {
     bytes: &'a [u8],
     offset: usize,

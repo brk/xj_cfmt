@@ -647,15 +647,14 @@ fn expand_inner(input: CommonInput, kind: Kind) -> Result<TokenStream2> {
         }
         Kind::Snprintf => {
             let destination = input.destination.expect("snprintf has destination");
-            let region = Ident::new("__cfmt_region", Span::mixed_site());
-            let terminated = Ident::new("__cfmt_terminated", Span::mixed_site());
+            let destination_view = Ident::new("__cfmt_destination", Span::mixed_site());
             let inner = with_args(quote! {
-                #path::__private::snprintf_region(#region, #terminated, #render)
+                #path::__private::snprintf_dest(#destination_view, #render)
             });
             quote! {{
-                use #path::CSnprintfDest as _;
-                match (#destination).dest() {
-                    (#region, #terminated) => { #inner }
+                use #path::CStrBuffer as _;
+                match (#destination).cstr_dest() {
+                    #destination_view => { #inner }
                 }
             }}
         }

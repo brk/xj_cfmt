@@ -5,3 +5,6 @@ edition = "2024"
 rust-version = "1.85"
 description = "Shared byte-oriented C printing format parser and analysis"
 license = "MIT"
+
+[dependencies]
+xj_bytes = { version = "0.1.0", path = "../../xj_bytes" }
