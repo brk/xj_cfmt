@@ -1,6 +1,6 @@
 use std::ffi::CString;
 use xj_cfmt::printf::{Arg, render};
-use xj_cfmt::{snprintf, snprintf_safe, sprintf_safe};
+use xj_cfmt::{snprintf, snprintf_raw, sprintf};
 
 // Each reference call supplies the actual promoted C argument types.
 macro_rules! differential {
@@ -10,11 +10,11 @@ macro_rules! differential {
         let c_count = unsafe { libc::snprintf(expected.as_mut_ptr().cast(), expected.len(), format.as_ptr() $(, $arg)*) };
         assert!(c_count >= 0);
         let mut literal = [0xabu8; 1024];
-        let count = unsafe { snprintf!(literal.as_mut_ptr(), literal.len(), $fmt $(, $arg)*) };
+        let count = unsafe { snprintf_raw!(literal.as_mut_ptr(), literal.len(), $fmt $(, $arg)*) };
         assert_eq!(count, c_count, "{:?}", format);
         assert_eq!(literal, expected, "{:?}", format);
         let mut dynamic = [0xabu8; 1024];
-        let count = unsafe { snprintf!(dynamic.as_mut_ptr(), dynamic.len(), format.as_c_str() $(, $arg)*) };
+        let count = unsafe { snprintf_raw!(dynamic.as_mut_ptr(), dynamic.len(), format.as_c_str() $(, $arg)*) };
         assert_eq!(count, c_count);
         assert_eq!(dynamic, expected);
     }};
@@ -66,7 +66,7 @@ fn promoted_integer_boundaries_flags_and_lengths() {
 #[test]
 fn signed_stars_byte_strings_and_characters() {
     let mut character = [0u8; 2];
-    assert_eq!(xj_cfmt::sprintf_safe!(character, b"%c", 'A'), 1);
+    assert_eq!(xj_cfmt::sprintf!(character, b"%c", 'A'), 1);
     assert_eq!(&character, b"A\0");
     for width in [-12i32, 0, 12] {
         for precision in [-1i32, 0, 2, 5] {
@@ -86,7 +86,7 @@ fn signed_stars_byte_strings_and_characters() {
     let bytes = [0xffu8, 1, 2];
     differential!(b"%.3s", bytes.as_ptr());
     let mut out = Vec::new();
-    assert_eq!(sprintf_safe!(out, b"%.2s\0%q", &[0xffu8, 1, 2]), 2);
+    assert_eq!(sprintf!(out, b"%.2s\0%q", &[0xffu8, 1, 2]), 2);
     assert_eq!(out, [0xff, 1]);
 }
 #[test]
@@ -135,7 +135,7 @@ fn all_count_store_widths_and_repeated_destinations() {
     let mut bytes = [0u8; 32];
     let fmt = b"a%hhn%hn%n%ln%lln%jn%zn%tnb%n";
     let count = unsafe {
-        snprintf!(
+        snprintf_raw!(
             bytes.as_mut_ptr(),
             bytes.len(),
             fmt,
@@ -166,18 +166,18 @@ fn counts_truncation_termination_zero_capacity_and_evaluation() {
     for size in 0..=8 {
         let mut actual = [0xabu8; 9];
         let mut expected = actual;
-        let a = unsafe { snprintf!(actual.as_mut_ptr(), size, b"abcdef") };
+        let a = unsafe { snprintf_raw!(actual.as_mut_ptr(), size, b"abcdef") };
         let b = unsafe { libc::snprintf(expected.as_mut_ptr().cast(), size, c"abcdef".as_ptr()) };
         assert_eq!((a, actual), (b, expected));
     }
     assert_eq!(
-        unsafe { snprintf!(core::ptr::null_mut::<u8>(), 0, b"abc") },
+        unsafe { snprintf_raw!(core::ptr::null_mut::<u8>(), 0, b"abc") },
         3
     );
     let mut count = 0;
     let mut output = Vec::new();
     assert_eq!(
-        sprintf_safe!(
+        sprintf!(
             output,
             b"%d",
             {
@@ -194,7 +194,7 @@ fn counts_truncation_termination_zero_capacity_and_evaluation() {
     assert_eq!(count, 2);
     assert_eq!(output, b"42");
     let mut bounded = [0xffu8; 4];
-    assert_eq!(snprintf_safe!(bounded, 4, b"%s", b"abcdef"), 6);
+    assert_eq!(snprintf!(bounded, 4, b"%s", b"abcdef"), 6);
     assert_eq!(&bounded, b"abc\0");
 }
 #[test]
@@ -215,7 +215,7 @@ fn unsupported_and_mismatched_arguments_are_errors() {
     }
     let mut out = [0xabu8; 4];
     let fmt = CString::new("%q").unwrap();
-    assert_eq!(snprintf_safe!(out, out.len(), fmt.as_c_str()), -1);
+    assert_eq!(snprintf!(out, out.len(), fmt.as_c_str()), -1);
     assert_eq!(unsafe { *libc::__errno_location() }, libc::EINVAL);
     assert_eq!(out, [0xab; 4]);
     assert!(matches!(

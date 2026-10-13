@@ -1,17 +1,17 @@
 error[E0133]: call to unsafe function `finish_raw` is unsafe and requires unsafe block
  --> tests/ui/c_format_unsafe.rs:3:5
   |
-3 |     xj_cfmt::sprintf!(out.as_mut_ptr(), b"%s", c"hello".as_ptr());
+3 |     xj_cfmt::sprintf_raw!(out.as_mut_ptr(), b"%s", c"hello".as_ptr());
   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
   |
   = note: consult the function's documentation for information on how to avoid undefined behavior
-  = note: this error originates in the macro `xj_cfmt::sprintf` (in Nightly builds, run with -Z macro-backtrace for more info)
+  = note: this error originates in the macro `xj_cfmt::sprintf_raw` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0133]: call to unsafe function `render` is unsafe and requires unsafe block
  --> tests/ui/c_format_unsafe.rs:3:5
   |
-3 |     xj_cfmt::sprintf!(out.as_mut_ptr(), b"%s", c"hello".as_ptr());
+3 |     xj_cfmt::sprintf_raw!(out.as_mut_ptr(), b"%s", c"hello".as_ptr());
   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
   |
   = note: consult the function's documentation for information on how to avoid undefined behavior
-  = note: this error originates in the macro `xj_cfmt::sprintf` (in Nightly builds, run with -Z macro-backtrace for more info)
+  = note: this error originates in the macro `xj_cfmt::sprintf_raw` (in Nightly builds, run with -Z macro-backtrace for more info)

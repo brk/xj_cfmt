@@ -6,11 +6,11 @@ renderer, regardless of the output destination.
 
 ```rust
 let mut output = Vec::new();
-assert_eq!(xj_cfmt::sprintf_safe!(output, b"%*.*s:%hhd", -5, 2, b"abcdef", 255), 8);
+assert_eq!(xj_cfmt::sprintf!(output, b"%*.*s:%hhd", -5, 2, b"abcdef", 255), 8);
 assert_eq!(output, b"ab   :-1");
 
 let mut buffer = [0u8; 4];
-assert_eq!(xj_cfmt::snprintf_safe!(buffer, 4, c"%s", c"abcdef"), 6);
+assert_eq!(xj_cfmt::snprintf!(buffer, 4, c"%s", c"abcdef"), 6);
 assert_eq!(&buffer, b"abc\0");
 ```
 
@@ -55,13 +55,13 @@ library's compatibility policy for inputs outside its profile; it is not a claim
 that C defines behavior for invalid variadic calls. A null `%s` prints `(null)`;
 a null `%n` destination is rejected.
 
-`sprintf!` and `snprintf!` take raw destination pointers and require an `unsafe`
+`sprintf_raw!` and `snprintf_raw!` take raw destination pointers and require an `unsafe`
 caller. Raw argument pointers are carried without format-dependent classification.
 The caller must guarantee readable string storage and correctly aligned writable
 count storage for the conversions that actually consume each pointer. The macros
 never hide dereferences of caller-supplied raw pointers inside an unsafe block.
 
-`sprintf_safe!` and `snprintf_safe!` accept bounded storage or growable `Vec<u8>`
+`sprintf!` and `snprintf!` accept bounded storage or growable `Vec<u8>`
 destinations and safe representations: scalars, C string views, and borrowed bytes. Their argument
 trait rejects raw pointers. Literal `%n` is rejected at compilation; runtime `%n`
 returns an error. Guided byte carriers support `%s`; using them for `%p`, `%n`,

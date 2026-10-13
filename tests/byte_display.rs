@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::fmt;
 use std::rc::Rc;
 
-use xj_cfmt::{Byte, ByteDisplay, ByteFormat, ByteView, RawBytes, cwrite, sprintf_safe};
+use xj_cfmt::{Byte, ByteDisplay, ByteFormat, ByteView, RawBytes, cwrite, sprintf};
 
 struct Packet([u8; 3]);
 
@@ -27,9 +27,9 @@ fn raw_bytes_overrides_display_without_changing_printf_string_semantics() {
         12
     );
     assert_eq!(output, b"packet|  a\0b");
-    assert_eq!(sprintf_safe!(output, c"%s", RawBytes(&packet)), 1);
+    assert_eq!(sprintf!(output, c"%s", RawBytes(&packet)), 1);
     assert_eq!(output, b"a");
-    assert_eq!(sprintf_safe!(output, c"%s", "a\0b"), 1);
+    assert_eq!(sprintf!(output, c"%s", "a\0b"), 1);
     assert_eq!(output, b"a");
 }
 
@@ -54,6 +54,6 @@ fn forwarding_preserves_formatting_policy_and_character_nuls() {
     let mut output = Vec::new();
     assert_eq!(cwrite!(&mut output, "{:>3.0}|{}", character, text), 7);
     assert_eq!(output, b"  \0|a\0b");
-    assert_eq!(sprintf_safe!(output, c"%.0c", Byte(0)), 1);
+    assert_eq!(sprintf!(output, c"%.0c", Byte(0)), 1);
     assert_eq!(output, b"\0");
 }

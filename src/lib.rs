@@ -292,7 +292,7 @@ pub mod printf;
 
 /// C sprintf into a raw buffer. Requires an unsafe caller.
 #[macro_export]
-macro_rules! sprintf {
+macro_rules! sprintf_raw {
     ($dest:expr, $fmt:expr $(, $arg:expr)* $(,)?) => {
         $crate::printf::finish_raw(($dest).cast(), None,
             $crate::printf::render($crate::ByteView::view_bytes(&$fmt), &[$($crate::printf::Adapt::c_arg(&$arg)),*]))
@@ -300,7 +300,7 @@ macro_rules! sprintf {
 }
 /// C snprintf into a raw buffer. Requires an unsafe caller.
 #[macro_export]
-macro_rules! snprintf {
+macro_rules! snprintf_raw {
     ($dest:expr, $size:expr, $fmt:expr $(, $arg:expr)* $(,)?) => {
         $crate::printf::finish_raw(($dest).cast(), Some(($size) as usize),
             $crate::printf::render($crate::ByteView::view_bytes(&$fmt), &[$($crate::printf::Adapt::c_arg(&$arg)),*]))
@@ -308,7 +308,7 @@ macro_rules! snprintf {
 }
 /// C sprintf into safe storage, using safe arguments.
 #[macro_export]
-macro_rules! sprintf_safe {
+macro_rules! sprintf {
     ($dest:expr, $fmt:expr $(, $arg:expr)* $(,)?) => {{
         $crate::__private::validate_safe_format!($fmt);
         use $crate::printf::DestinationExt as _;
@@ -318,7 +318,7 @@ macro_rules! sprintf_safe {
 }
 /// C snprintf into safe storage, using safe arguments.
 #[macro_export]
-macro_rules! snprintf_safe {
+macro_rules! snprintf {
     ($dest:expr, $size:expr, $fmt:expr $(, $arg:expr)* $(,)?) => {{
         $crate::__private::validate_safe_format!($fmt);
         use $crate::printf::DestinationExt as _;
