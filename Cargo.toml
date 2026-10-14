@@ -16,7 +16,7 @@ std-stdio = []
 
 [dependencies]
 xj_cfmt_core = { version = "0.1.0", path = "xj_cfmt_core" }
-xj_bytes = { version = "0.1.0", path = "../xj_bytes", features = ["std"] }
+xj_bytes = { version = "0.1.0", features = ["std"] }
 libc = "0.2"
 xj_cfmt_macros = { version = "0.1.0", path = "xj_cfmt_macros" }
 
